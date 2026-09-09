@@ -1,0 +1,160 @@
+name: Run benchmark
+
+# Two ways to start this:
+#   * the "Run workflow" button on the Actions tab
+#   * a push to main that touches the notebooks or the bench package
+#
+# Anyone can press the button. That is deliberate: a benchmark someone else can
+# re-run is worth far more than one they have to take on trust.
+
+on:
+  workflow_dispatch:
+    inputs:
+      quick:
+        description: "Quick run? (yes = small data, ~10 min. no = full run, much longer)"
+        type: choice
+        options: ["yes", "no"]
+        default: "yes"
+      threads:
+        description: "Threads per engine (blank = all cores on the runner)"
+        type: string
+        default: ""
+      memory_mb:
+        description: "Memory per engine in MB (blank = 35% of the runner's RAM)"
+        type: string
+        default: ""
+  push:
+    branches: [main]
+    paths:
+      - "notebooks/**"
+      - "bench/**"
+      - ".github/workflows/benchmark.yml"
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest          # public repo => 4 vCPU / 16 GB, unlimited minutes
+    timeout-minutes: 350            # the job limit is 6 hours
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Java
+        # Current PySpark needs Java 17+. Most tutorials still say Java 8 --
+        # that advice is years out of date and will not work.
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Record the machine this ran on
+        run: |
+          {
+            echo "## Machine this benchmark ran on"
+            echo ""
+            echo '```'
+            echo "CPU cores : $(nproc)"
+            echo "Memory    : $(free -g | awk '/^Mem:/{print $2}') GB"
+            echo "Disk free : $(df -BG --output=avail / | tail -1 | tr -d ' ')"
+            echo "Python    : $(python --version)"
+            echo "Java      : $(java -version 2>&1 | head -1)"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Run every notebook
+        env:
+          BENCH_QUICK: ${{ github.event.inputs.quick == 'no' && '0' || '1' }}
+          BENCH_THREADS: ${{ github.event.inputs.threads }}
+          BENCH_MEM_MB: ${{ github.event.inputs.memory_mb }}
+        run: |
+          set -e
+          mkdir -p html
+          cd notebooks
+          for nb in $(ls *.ipynb | sort); do
+            echo "::group::$nb"
+            jupyter nbconvert --to notebook --execute --inplace \
+                              --ExecutePreprocessor.timeout=5400 "$nb"
+            echo "::endgroup::"
+          done
+
+      - name: Export HTML
+        run: |
+          cd notebooks
+          for nb in *.ipynb; do
+            base="${nb%.ipynb}"
+            # full version: code included, so anyone can check what was run
+            jupyter nbconvert --to html "$nb" --output "../html/${base}.html"
+            # clean version: results only
+            jupyter nbconvert --to html --no-input "$nb" \
+                              --output "../html/${base}_clean.html"
+          done
+
+      - name: Build an index page
+        run: |
+          cd html
+          {
+            echo "<!doctype html><meta charset=utf-8>"
+            echo "<title>DuckDB vs Spark benchmark</title>"
+            echo "<style>body{font-family:system-ui,sans-serif;max-width:52rem;margin:3rem auto;padding:0 1rem;line-height:1.6}"
+            echo "a{color:#3A7CA5}td{padding:.3rem .8rem .3rem 0}</style>"
+            echo "<h1>DuckDB vs Spark — benchmark run</h1>"
+            echo "<p>Commit <code>${GITHUB_SHA:0:7}</code> · run #${GITHUB_RUN_NUMBER} · $(date -u '+%Y-%m-%d %H:%M UTC')</p>"
+            echo "<p>Machine: $(nproc) CPU cores, $(free -g | awk '/^Mem:/{print $2}') GB RAM.</p>"
+            echo "<p><strong>Start with 10_summary.</strong> Every notebook has a full version"
+            echo "(with code) and a clean version (results only).</p><table>"
+            for f in $(ls *.html | grep -v _clean | grep -v index | sort); do
+              base="${f%.html}"
+              echo "<tr><td><b>${base}</b></td><td><a href='${f}'>full</a></td>"
+              echo "<td><a href='${base}_clean.html'>clean</a></td></tr>"
+            done
+            echo "</table>"
+          } > index.html
+
+      - name: Upload HTML report
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-html
+          path: html/
+          retention-days: 90
+
+      - name: Upload raw results
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-results-json
+          path: results/
+          retention-days: 90
+
+      - name: Put the headline in the run summary
+        if: always()
+        run: |
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import json, glob, statistics
+          rows = [r for f in glob.glob("results/*.json") for r in json.load(open(f))]
+          done = [r for r in rows if r.get("duckdb_s") and r.get("spark_s")]
+          print("\n## Result\n")
+          if not done:
+              print("No comparable results were produced.")
+          else:
+              ratios = [r["ratio"] for r in done]
+              same = sum(1 for r in rows if r.get("identical_sql"))
+              ok   = sum(1 for r in rows if r.get("same_answer") is True)
+              bad  = [r for r in rows if r.get("same_answer") is False]
+              print(f"* Operations compared: **{len(done)}**")
+              print(f"* Median gap: **{statistics.median(ratios):.0f}x**")
+              print(f"* Range: **{min(ratios):g}x to {max(ratios):g}x**")
+              print(f"* Identical SQL in both engines: **{same} of {len(rows)}**")
+              print(f"* Answers confirmed identical: **{ok}**, differing: **{len(bad)}**")
+              spark_won = [r for r in done if r["ratio"] < 1]
+              if spark_won:
+                  print(f"* Spark was faster on: {', '.join(r['operation'] for r in spark_won)}")
+              print("\nDownload the **benchmark-html** artifact below for the full report.")
+          PY

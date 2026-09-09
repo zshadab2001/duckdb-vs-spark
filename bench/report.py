@@ -1,0 +1,125 @@
+"""Charts and tables. Kept deliberately plain: readable beats decorative."""
+import matplotlib.pyplot as plt
+import pandas as pd
+from . import config as C
+
+DUCK_C = "#3A7CA5"
+SPARK_C = "#E8833A"
+GREY = "#C9CBD1"
+
+
+def _clean(df):
+    return df[df["duckdb_s"].notna() & df["spark_s"].notna()].copy()
+
+
+def times_chart(df, title=None, height_per_row=0.55):
+    """Side-by-side seconds per operation, with the ratio labelled."""
+    d = _clean(df)
+    if d.empty:
+        print("Nothing to chart (Spark did not produce results).")
+        return
+    d = d.sort_values("ratio", ascending=False)
+    n = len(d)
+    fig, ax = plt.subplots(figsize=(11, max(3, height_per_row * n + 1.8)))
+    y, h = range(n), 0.38
+    ax.barh([i + h / 2 for i in y], d["spark_s"], height=h, color=SPARK_C, label="Spark")
+    ax.barh([i - h / 2 for i in y], d["duckdb_s"], height=h, color=DUCK_C, label="DuckDB")
+    top = float(d["spark_s"].max())
+    for i in range(n):
+        sv, dv, r = float(d["spark_s"].iloc[i]), float(d["duckdb_s"].iloc[i]), d["ratio"].iloc[i]
+        ax.text(sv + top * 0.012, i + h / 2, f"{sv:.1f}s", va="center", fontsize=9)
+        ax.text(dv + top * 0.012, i - h / 2, f"{dv:.2f}s  ({r:g}x)", va="center",
+                fontsize=9, weight="bold", color=DUCK_C)
+    ax.set_xlim(0, top * 1.35)
+    ax.set_yticks(list(y))
+    ax.set_yticklabels(d["operation"], fontsize=9)
+    ax.invert_yaxis()
+    ax.set_xlabel("Seconds (lower is better)")
+    ax.set_title(title or f"{C.human(int(d['rows'].iloc[0]))} sales rows — "
+                          f"both engines, {C.ENGINE_MEMORY_MB} MB and {C.ENGINE_THREADS} threads each",
+                 fontsize=12, weight="bold", pad=12)
+    ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.10 - 0.4 / max(n, 1)),
+              ncol=2, frameon=False)
+    ax.grid(axis="x", alpha=.25)
+    for sp in ("top", "right", "left"):
+        ax.spines[sp].set_visible(False)
+    plt.tight_layout()
+    plt.show()
+
+
+def ratio_chart(df, title="How much the gap varies by operation"):
+    """The point of the whole project: the answer depends on the job."""
+    d = _clean(df).sort_values("ratio")
+    if d.empty:
+        return
+    fig, ax = plt.subplots(figsize=(11, max(3, 0.42 * len(d) + 1.8)))
+    colours = [SPARK_C if r < 1 else ("#8AB6D6" if r < 5 else DUCK_C) for r in d["ratio"]]
+    ax.barh(range(len(d)), d["ratio"], color=colours, height=0.62)
+    for i, r in enumerate(d["ratio"]):
+        ax.text(r * 1.03, i, f"{r:g}x", va="center", fontsize=9, weight="bold")
+    ax.axvline(1, color="#444", lw=1.2, ls="--")
+    ax.text(1.05, -0.9, "left of this line = Spark wins", fontsize=8, color="#444")
+    ax.set_xscale("log")
+    ax.set_yticks(range(len(d)))
+    ax.set_yticklabels(d["operation"], fontsize=9)
+    ax.set_xlabel("How many times faster DuckDB was (log scale)")
+    ax.set_title(title, fontsize=12, weight="bold", pad=12)
+    ax.grid(axis="x", alpha=.25)
+    for sp in ("top", "right", "left"):
+        ax.spines[sp].set_visible(False)
+    plt.tight_layout()
+    plt.show()
+
+
+def category_chart(df, title="Median gap by kind of work"):
+    d = _clean(df)
+    if d.empty:
+        return
+    g = d.groupby("category")["ratio"].median().sort_values()
+    fig, ax = plt.subplots(figsize=(9, max(2.5, 0.5 * len(g) + 1.5)))
+    ax.barh(range(len(g)), g.values, color=DUCK_C, height=0.6)
+    for i, v in enumerate(g.values):
+        ax.text(v * 1.03, i, f"{v:.0f}x", va="center", fontsize=10, weight="bold")
+    ax.axvline(1, color="#444", lw=1.2, ls="--")
+    ax.set_xscale("log")
+    ax.set_yticks(range(len(g)))
+    ax.set_yticklabels(g.index, fontsize=10)
+    ax.set_xlabel("Median times faster (log scale)")
+    ax.set_title(title, fontsize=12, weight="bold", pad=12)
+    ax.grid(axis="x", alpha=.25)
+    for sp in ("top", "right", "left"):
+        ax.spines[sp].set_visible(False)
+    plt.tight_layout()
+    plt.show()
+
+
+def results_table(df):
+    """The table a reader actually wants: readable, sorted, no clutter."""
+    d = df.copy()
+    d["DuckDB (s)"] = d["duckdb_s"].round(3)
+    d["Spark (s)"] = d["spark_s"].round(2)
+    d["DuckDB faster by"] = d["ratio"].map(lambda r: f"{r:g}x" if pd.notna(r) else "-")
+    d["Same SQL?"] = d["identical_sql"].map({True: "yes", False: "no"})
+    d["Same answer?"] = d["same_answer"].map({True: "yes", False: "NO", None: "approx"})
+    cols = ["id", "operation", "category", "DuckDB (s)", "Spark (s)",
+            "DuckDB faster by", "Same SQL?", "Same answer?"]
+    return d[cols].rename(columns={"id": "#", "operation": "Operation", "category": "Category"})
+
+
+def headline(df):
+    d = _clean(df)
+    if d.empty:
+        print("No comparable results.")
+        return
+    spark_wins = d[d["ratio"] < 1]
+    close = d[(d["ratio"] >= 1) & (d["ratio"] < 3)]
+    print(f"   Operations compared     : {len(d)}")
+    print(f"   Identical SQL both sides: {int(df['identical_sql'].sum())} of {len(df)}")
+    print(f"   Median gap              : {d['ratio'].median():.0f}x")
+    print(f"   Range                   : {d['ratio'].min():g}x to {d['ratio'].max():g}x")
+    print(f"   Spark faster on         : {len(spark_wins)} "
+          f"({', '.join(spark_wins['operation'].head(4)) if len(spark_wins) else 'none at this size'})")
+    print(f"   Close (under 3x)        : {len(close)}")
+    bad = df[df["same_answer"] == False]
+    if len(bad):
+        print(f"   WARNING - answers differ on: {', '.join(bad['operation'])}")
