@@ -11,7 +11,29 @@ import os, shutil
 # ---------------------------------------------------------------------------
 # QUICK=1 is a small fast run to check everything works (a few minutes).
 # QUICK=0 is the real run.
-QUICK = os.environ.get("BENCH_QUICK", "1") == "1"
+def _env(name, default=""):
+    """Read an environment variable.
+
+    Note the `.strip()` and the emptiness check. CI systems often set a variable
+    to an EMPTY STRING rather than leaving it unset, and plain os.environ.get()
+    returns that empty string instead of the default. That difference will
+    happily crash int() on the first import.
+    """
+    v = os.environ.get(name)
+    v = v.strip() if v is not None else ""
+    return v if v else default
+
+
+def _env_int(name, default):
+    v = _env(name)
+    try:
+        return int(v) if v else default
+    except ValueError:
+        print(f"[config] {name}={v!r} is not a number; using {default}")
+        return default
+
+
+QUICK = _env("BENCH_QUICK", "1") != "0"
 
 if QUICK:
     SIZES = [200_000, 1_000_000]
@@ -45,8 +67,8 @@ except Exception:
 # ---------------------------------------------------------------------------
 # This is the most important fairness rule in the project. Neither engine is
 # given a bigger desk than the other.
-ENGINE_MEMORY_MB = int(os.environ.get("BENCH_MEM_MB", max(1024, int(RAM_GB * 1024 * 0.35))))
-ENGINE_THREADS = int(os.environ.get("BENCH_THREADS", CORES))
+ENGINE_MEMORY_MB = _env_int("BENCH_MEM_MB", max(1024, int(RAM_GB * 1024 * 0.35)))
+ENGINE_THREADS = _env_int("BENCH_THREADS", CORES)
 
 # ---------------------------------------------------------------------------
 # 3. FAIRNESS RULES
@@ -55,7 +77,7 @@ ENGINE_THREADS = int(os.environ.get("BENCH_THREADS", CORES))
 WARMUP_RUNS = 1
 # No repeats: the gaps we are measuring are far larger than cloud-runner noise.
 # For variance, re-run the whole workflow on a different day instead.
-TIMED_RUNS = int(os.environ.get("BENCH_RUNS", "1"))
+TIMED_RUNS = _env_int("BENCH_RUNS", 1)
 
 # ---------------------------------------------------------------------------
 # 4. SPARK TUNING -- every one of these makes Spark FASTER than its defaults
@@ -86,7 +108,7 @@ SPARK_CONF = {
 # ---------------------------------------------------------------------------
 # 5. WHERE THINGS LIVE
 # ---------------------------------------------------------------------------
-ROOT = os.environ.get("BENCH_ROOT", os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+ROOT = _env("BENCH_ROOT", os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 DATA_DIR = os.path.join(ROOT, "bench_data")
 OUT_DIR = os.path.join(ROOT, "bench_out")
 RESULTS_DIR = os.path.join(ROOT, "results")
