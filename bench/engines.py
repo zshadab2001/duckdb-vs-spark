@@ -1,11 +1,5 @@
-"""
-Starts both engines with IDENTICAL memory and thread budgets, and points them
-at the same files under the same names.
-
-Because the names match, most benchmark cases can send the *same SQL string* to
-both engines. That is not a cosmetic detail: it is the evidence for "moving a
-job between them later is small work, not a migration".
-"""
+"""Starts both engines with identical memory and thread budgets, and registers the
+same table names in each so most cases can send one SQL string to both."""
 import os, time, warnings, duckdb
 from . import config as C
 
@@ -63,7 +57,6 @@ def stop_spark():
         _spark = None
 
 
-# --- register the same names in both engines -------------------------------
 VIEW_KEYS = ("sales", "customers", "products", "returns", "sales_v2")
 
 
@@ -81,7 +74,7 @@ def attach(duck, spark, paths, extras=True):
             spark.read.parquet(path).createOrReplaceTempView(name)
         registered.append(name)
 
-    # Partitioned dataset needs hive-style partition discovery in both engines.
+    # Needs hive-style partition discovery in both engines.
     part = paths.get("sales_part")
     if part and os.path.isdir(part):
         duck.execute(
@@ -96,10 +89,9 @@ def attach(duck, spark, paths, extras=True):
 def describe():
     lines = ["ENGINE STARTUP", ""]
     if DUCK_START_SECONDS is not None:
-        lines.append(f"   DuckDB ready in : {DUCK_START_SECONDS:.3f} s   (it is a library; there is nothing to start)")
+        lines.append(f"   DuckDB ready in : {DUCK_START_SECONDS:.3f} s")
     if SPARK_START_SECONDS is not None:
-        lines.append(f"   Spark  ready in : {SPARK_START_SECONDS:.1f} s   (one machine, no cluster, no network)")
+        lines.append(f"   Spark  ready in : {SPARK_START_SECONDS:.1f} s   (one machine, no cluster)")
         lines.append("")
-        lines.append("   Note: this startup time is NOT included in any benchmark below.")
-        lines.append("   Every timing is work only, with the engine already warm.")
+        lines.append("   Startup is not included in any timing below.")
     return "\n".join(lines)

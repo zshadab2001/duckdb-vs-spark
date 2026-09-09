@@ -1,4 +1,4 @@
-"""Charts and tables. Kept deliberately plain: readable beats decorative."""
+"""Charts and tables."""
 import matplotlib.pyplot as plt
 import pandas as pd
 from . import config as C
@@ -13,7 +13,7 @@ def _clean(df):
 
 
 def times_chart(df, title=None, height_per_row=0.55):
-    """Side-by-side seconds per operation, with the ratio labelled."""
+    """Side-by-side seconds per operation."""
     d = _clean(df)
     if d.empty:
         print("Nothing to chart (Spark did not produce results).")
@@ -48,7 +48,7 @@ def times_chart(df, title=None, height_per_row=0.55):
 
 
 def ratio_chart(df, title="How much the gap varies by operation"):
-    """The point of the whole project: the answer depends on the job."""
+    """Ratio per operation, log scale."""
     d = _clean(df).sort_values("ratio")
     if d.empty:
         return
@@ -71,30 +71,8 @@ def ratio_chart(df, title="How much the gap varies by operation"):
     plt.show()
 
 
-def category_chart(df, title="Median gap by kind of work"):
-    d = _clean(df)
-    if d.empty:
-        return
-    g = d.groupby("category")["ratio"].median().sort_values()
-    fig, ax = plt.subplots(figsize=(9, max(2.5, 0.5 * len(g) + 1.5)))
-    ax.barh(range(len(g)), g.values, color=DUCK_C, height=0.6)
-    for i, v in enumerate(g.values):
-        ax.text(v * 1.03, i, f"{v:.0f}x", va="center", fontsize=10, weight="bold")
-    ax.axvline(1, color="#444", lw=1.2, ls="--")
-    ax.set_xscale("log")
-    ax.set_yticks(range(len(g)))
-    ax.set_yticklabels(g.index, fontsize=10)
-    ax.set_xlabel("Median times faster (log scale)")
-    ax.set_title(title, fontsize=12, weight="bold", pad=12)
-    ax.grid(axis="x", alpha=.25)
-    for sp in ("top", "right", "left"):
-        ax.spines[sp].set_visible(False)
-    plt.tight_layout()
-    plt.show()
-
-
 def results_table(df):
-    """The table a reader actually wants: readable, sorted, no clutter."""
+
     d = df.copy()
     d["DuckDB (s)"] = d["duckdb_s"].round(3)
     d["Spark (s)"] = d["spark_s"].round(2)
@@ -112,14 +90,11 @@ def headline(df):
         print("No comparable results.")
         return
     spark_wins = d[d["ratio"] < 1]
-    close = d[(d["ratio"] >= 1) & (d["ratio"] < 3)]
     print(f"   Operations compared     : {len(d)}")
     print(f"   Identical SQL both sides: {int(df['identical_sql'].sum())} of {len(df)}")
-    print(f"   Median gap              : {d['ratio'].median():.0f}x")
     print(f"   Range                   : {d['ratio'].min():g}x to {d['ratio'].max():g}x")
     print(f"   Spark faster on         : {len(spark_wins)} "
           f"({', '.join(spark_wins['operation'].head(4)) if len(spark_wins) else 'none at this size'})")
-    print(f"   Close (under 3x)        : {len(close)}")
     bad = df[df["same_answer"] == False]
     if len(bad):
         print(f"   WARNING - answers differ on: {', '.join(bad['operation'])}")

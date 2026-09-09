@@ -1,18 +1,10 @@
-"""
-Builds the test datasets.
+"""Builds the test datasets.
 
-Everything is synthetic and generated from a hash of the row number, so it is
-fully reproducible and contains nothing from anybody's company.
+All synthetic and derived from a hash of the row number, so it is reproducible.
 
-Two things worth knowing:
-
-1. The `sales` table is deliberately WIDE (22 columns). Real tables are wide,
-   and it lets us show that a good engine only reads the columns it needs.
-
-2. The data is deliberately DIRTY. Data-quality checks on perfectly clean data
-   measure nothing, so we inject nulls, duplicates, out-of-range values,
-   orphan foreign keys and inconsistent text on purpose. The defect rates are
-   listed in DEFECTS below so nobody has to guess what was planted.
+The sales table is deliberately wide (22 columns) and deliberately dirty. Quality
+checks against clean data measure nothing, so the defects below are injected on
+purpose and listed rather than left to be discovered.
 """
 import os, duckdb
 from . import config as C
@@ -49,7 +41,6 @@ def _con():
                                   "threads": str(C.ENGINE_THREADS)})
 
 
-# --- the wide, dirty fact table -------------------------------------------
 _SALES_SELECT = """
 SELECT
     i                                                              AS sale_id,
@@ -100,7 +91,7 @@ def build(n_rows, with_extras=False, force=False, log=print):
 
     con = _con()
     if force or not core_done:
-        # --- customers: inconsistent country text on purpose ---------------
+        # inconsistent country text on purpose
         con.execute(f"""COPY (
             SELECT i AS customer_id,
                    CASE hash(i * 13) % 10
@@ -125,7 +116,7 @@ def build(n_rows, with_extras=False, force=False, log=print):
             FROM range({n_prod}) t(i)
         ) TO '{p["products"]}' (FORMAT PARQUET)""")
 
-        # --- sales, with ~0.5% exact duplicate rows appended ---------------
+        # ~0.5% exact duplicate rows appended
         sel = _SALES_SELECT.format(n_rows=n_rows, n_cust=n_cust, n_prod=n_prod)
         dup_sel = _SALES_SELECT.format(n_rows=max(1, n_rows // 200), n_cust=n_cust, n_prod=n_prod)
         con.execute(f"COPY ({sel} UNION ALL {dup_sel}) TO '{p['sales']}' (FORMAT PARQUET)")
@@ -139,11 +130,11 @@ def build(n_rows, with_extras=False, force=False, log=print):
 
 
 def _build_extras(con, p, n_rows, n_cust, force=False, log=print):
-    """Companion datasets: big second table, a changed snapshot, a partitioned
-    copy, a many-small-files copy, and a CSV extract."""
+    """Second large table, a changed snapshot, a partitioned copy, a
+    many-small-files copy and a CSV extract."""
     n_ret = max(1000, n_rows // 2)
 
-    # A second LARGE table so we can do a genuine big-to-big shuffle join.
+    # Large on both sides, so joins against sales are a real shuffle.
     if force or not os.path.exists(p["returns"]):
         con.execute(f"""COPY (
             SELECT i                                              AS return_id,
@@ -155,7 +146,7 @@ def _build_extras(con, p, n_rows, n_cust, force=False, log=print):
         ) TO '{p["returns"]}' (FORMAT PARQUET)""")
         log("   built returns (second large table for big-to-big joins)")
 
-    # A later snapshot of the same table: some rows changed, some new, some gone.
+    # A later snapshot: some rows changed, some deleted.
     if force or not os.path.exists(p["sales_v2"]):
         con.execute(f"""COPY (
             SELECT sale_id,
@@ -163,11 +154,10 @@ def _build_extras(con, p, n_rows, n_cust, force=False, log=print):
                         THEN round(COALESCE(amount, 0) * 1.15, 2) ELSE amount END AS amount,
                    CASE WHEN hash(sale_id * 3) % 20 = 0 THEN 'amended' ELSE 'final' END AS status
             FROM read_parquet('{p["sales"]}')
-            WHERE hash(sale_id * 7) % 50 <> 0            -- ~2% of rows deleted
+            WHERE hash(sale_id * 7) % 50 <> 0            -- ~2% deleted
         ) TO '{p["sales_v2"]}' (FORMAT PARQUET)""")
         log("   built sales_v2 (later snapshot: changes, deletions)")
 
-    # Partitioned copy, for partition-pruning tests.
     if force or not os.path.isdir(p["sales_part"]):
         con.execute(f"""COPY (
             SELECT sale_id, customer_id, product_id, amount, quantity, channel, region,
@@ -177,7 +167,6 @@ def _build_extras(con, p, n_rows, n_cust, force=False, log=print):
           (FORMAT PARQUET, PARTITION_BY (sale_month), OVERWRITE_OR_IGNORE 1)""")
         log("   built partitioned copy (by month)")
 
-    # Many small files, for the compaction test.
     if force or not os.path.isdir(p["sales_small_files"]):
         os.makedirs(p["sales_small_files"], exist_ok=True)
         con.execute(f"""COPY (
@@ -189,7 +178,6 @@ def _build_extras(con, p, n_rows, n_cust, force=False, log=print):
           (FORMAT PARQUET, PARTITION_BY (shard), OVERWRITE_OR_IGNORE 1)""")
         log("   built many-small-files copy (200 shards)")
 
-    # A CSV extract, for the classic "convert CSV to Parquet" job.
     if force or not os.path.exists(p["sales_csv"]):
         n_csv = min(n_rows, 1_000_000)
         con.execute(f"""COPY (

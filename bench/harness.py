@@ -1,14 +1,8 @@
-"""
-The stopwatch, and the rules it follows.
+"""Timing harness.
 
-  * one untimed WARM-UP run first, so we never time a cold JVM
-  * both engines must hand back a REAL answer, not a promise to do the work later
-  * both answers are kept and compared, because a fast wrong answer is worthless
-  * if one engine fails a case, we record the failure and carry on
-
-Most cases send the SAME SQL STRING to both engines. Where that is impossible
-(JSON handling, percentiles, writing files) the case is marked, and the count of
-identical-SQL cases is reported at the end. That count is itself a finding.
+An untimed warm-up runs first so a cold JVM is never measured. Both engines must
+materialise a real result, and both results are compared. A failure on one engine
+is recorded rather than aborting the run.
 """
 import json, os, time, statistics, traceback
 from dataclasses import dataclass, field
@@ -28,9 +22,8 @@ class Case:
     duck_fn: Optional[Callable] = None     # arbitrary python (writes, etc.)
     spark_fn: Optional[Callable] = None
     materialize: str = "df"                # "df" = collect result, "count" = count rows
-    approximate: bool = False              # answers legitimately differ (approx algorithms)
+    approximate: bool = False              # sketching algorithms, answers will not match
     note: str = ""
-    why: str = ""                          # what this case is actually testing
 
     @property
     def identical_sql(self) -> bool:
@@ -45,7 +38,6 @@ class Bench:
         self.size = size or C.MAIN_SIZE
         self.rows: List[dict] = []
 
-    # -- internals ---------------------------------------------------------
     def _duck_callable(self, case):
         if case.duck_fn:
             return case.duck_fn
@@ -96,13 +88,12 @@ class Bench:
                 return False
         return True
 
-    # -- public ------------------------------------------------------------
     def run(self, case: Case, quiet=False):
         d_fn, s_fn = self._duck_callable(case), self._spark_callable(case)
         row = {
             "notebook": self.notebook, "id": case.id, "operation": case.name,
             "category": case.category, "rows": self.size,
-            "identical_sql": case.identical_sql, "why": case.why, "note": case.note,
+            "identical_sql": case.identical_sql, "note": case.note,
             "duckdb_s": None, "spark_s": None, "ratio": None,
             "same_answer": None, "duckdb_error": None, "spark_error": None,
         }
@@ -157,7 +148,7 @@ class Bench:
 
 
 def load_all():
-    """Combine every notebook's results for the summary notebook."""
+    """Combine every notebook's saved results."""
     frames = []
     for name in sorted(os.listdir(C.RESULTS_DIR)):
         if name.endswith(".json"):
