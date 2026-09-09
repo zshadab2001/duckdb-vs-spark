@@ -1,10 +1,8 @@
-# DuckDB is the whole proposal: a 2 MB library, no server, no cluster, no Java.
 duckdb>=1.1
-# Spark is here only so there is something to compare against.
 pyspark>=3.5
-pyarrow>=15          # lets Spark hand results back to Python quickly
+pyarrow>=15
 pandas>=2.0
 matplotlib>=3.7
-psutil>=5.9          # so the notebooks can report the machine they ran on
+psutil>=5.9
 jupyter>=1.0
 nbconvert>=7.0
