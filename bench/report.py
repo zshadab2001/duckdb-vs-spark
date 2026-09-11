@@ -35,7 +35,7 @@ def times_chart(df, title=None, height_per_row=0.55):
     ax.set_yticklabels(d["operation"], fontsize=9)
     ax.invert_yaxis()
     ax.set_xlabel("Seconds (lower is better)")
-    ax.set_title(title or f"{C.human(int(d['rows'].iloc[0]))} sales rows — "
+    ax.set_title(title or f"{C.human(int(d['rows'].iloc[0]))} sales rows, "
                           f"both engines, {C.ENGINE_MEMORY_MB} MB and {C.ENGINE_THREADS} threads each",
                  fontsize=12, weight="bold", pad=12)
     ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.10 - 0.4 / max(n, 1)),
@@ -47,33 +47,12 @@ def times_chart(df, title=None, height_per_row=0.55):
     plt.show()
 
 
-def ratio_chart(df, title="How much the gap varies by operation"):
-    """Ratio per operation, log scale."""
-    d = _clean(df).sort_values("ratio")
-    if d.empty:
-        return
-    fig, ax = plt.subplots(figsize=(11, max(3, 0.42 * len(d) + 1.8)))
-    colours = [SPARK_C if r < 1 else ("#8AB6D6" if r < 5 else DUCK_C) for r in d["ratio"]]
-    ax.barh(range(len(d)), d["ratio"], color=colours, height=0.62)
-    for i, r in enumerate(d["ratio"]):
-        ax.text(r * 1.03, i, f"{r:g}x", va="center", fontsize=9, weight="bold")
-    ax.axvline(1, color="#444", lw=1.2, ls="--")
-    ax.text(1.05, -0.9, "left of this line = Spark wins", fontsize=8, color="#444")
-    ax.set_xscale("log")
-    ax.set_yticks(range(len(d)))
-    ax.set_yticklabels(d["operation"], fontsize=9)
-    ax.set_xlabel("How many times faster DuckDB was (log scale)")
-    ax.set_title(title, fontsize=12, weight="bold", pad=12)
-    ax.grid(axis="x", alpha=.25)
-    for sp in ("top", "right", "left"):
-        ax.spines[sp].set_visible(False)
-    plt.tight_layout()
-    plt.show()
-
-
 def results_table(df):
 
     d = df.copy()
+    if "metadata_only" in d:
+        d["operation"] = [f"{op} (file stats only)" if m else op
+                          for op, m in zip(d["operation"], d["metadata_only"].fillna(False))]
     d["DuckDB (s)"] = d["duckdb_s"].round(3)
     d["Spark (s)"] = d["spark_s"].round(2)
     d["DuckDB faster by"] = d["ratio"].map(lambda r: f"{r:g}x" if pd.notna(r) else "-")

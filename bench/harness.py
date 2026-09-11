@@ -23,6 +23,7 @@ class Case:
     spark_fn: Optional[Callable] = None
     materialize: str = "df"                # "df" = collect result, "count" = count rows
     approximate: bool = False              # sketching algorithms, answers will not match
+    metadata_only: bool = False            # answerable from the Parquet footer, no data read
     note: str = ""
 
     @property
@@ -94,6 +95,7 @@ class Bench:
             "notebook": self.notebook, "id": case.id, "operation": case.name,
             "category": case.category, "rows": self.size,
             "identical_sql": case.identical_sql, "note": case.note,
+            "metadata_only": case.metadata_only,
             "duckdb_s": None, "spark_s": None, "ratio": None,
             "same_answer": None, "duckdb_error": None, "spark_error": None,
         }
