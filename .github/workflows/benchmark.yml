@@ -106,7 +106,7 @@ jobs:
             echo "<title>DuckDB vs Spark benchmark</title>"
             echo "<style>body{font-family:system-ui,sans-serif;max-width:52rem;margin:3rem auto;padding:0 1rem;line-height:1.6}"
             echo "a{color:#3A7CA5}td{padding:.3rem .8rem .3rem 0}</style>"
-            echo "<h1>DuckDB vs Spark — benchmark run</h1>"
+            echo "<h1>Compare DuckDB and Spark</h1>"
             echo "<p>Commit <code>${GITHUB_SHA:0:7}</code> · run #${GITHUB_RUN_NUMBER} · $(date -u '+%Y-%m-%d %H:%M UTC')</p>"
             echo "<p>Machine: $(nproc) CPU cores, $(free -g | awk '/^Mem:/{print $2}') GB RAM.</p>"
             echo "<p><strong>Start with 10_summary.</strong></p><table>"
