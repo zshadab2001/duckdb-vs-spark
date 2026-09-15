@@ -22,7 +22,7 @@ def times_chart(df, title=None, height_per_row=0.55):
     n = len(d)
     fig, ax = plt.subplots(figsize=(11, max(3, height_per_row * n + 1.8)))
     y, h = range(n), 0.38
-    ax.barh([i + h / 2 for i in y], d["spark_s"], height=h, color=SPARK_C, label="Distributed (Spark, local mode)")
+    ax.barh([i + h / 2 for i in y], d["spark_s"], height=h, color=SPARK_C, label="Split up (Spark, local mode)")
     ax.barh([i - h / 2 for i in y], d["duckdb_s"], height=h, color=DUCK_C, label="Single process (DuckDB)")
     top = float(d["spark_s"].max())
     for i in range(n):
@@ -53,14 +53,14 @@ def results_table(df):
         d["operation"] = [f"{op} (file stats only)" if m else op
                           for op, m in zip(d["operation"], d["metadata_only"].fillna(False))]
     d["Single process (s)"] = d["duckdb_s"].round(3)
-    d["Distributed (s)"] = d["spark_s"].round(2)
-    # Deliberately called "Ratio" and not "cost of distributing". The gap includes
-    # implementation and runtime differences between the engines, not only the
-    # coordination overhead, so naming it as a cause would overstate what was measured.
+    d["Split up (s)"] = d["spark_s"].round(2)
+    # Called "Ratio" rather than anything that names a cause. The gap comes partly
+    # from splitting the work up and partly from the two engines being built
+    # differently, and this setup cannot tell you how much is which.
     d["Ratio"] = d["ratio"].map(lambda r: f"{r:g}x" if pd.notna(r) else "-")
     d["Same SQL?"] = d["identical_sql"].map({True: "yes", False: "no"})
     d["Same answer?"] = d["same_answer"].map({True: "yes", False: "NO", None: "approx"})
-    cols = ["id", "operation", "category", "Single process (s)", "Distributed (s)",
+    cols = ["id", "operation", "category", "Single process (s)", "Split up (s)",
             "Ratio", "Same SQL?", "Same answer?"]
     return d[cols].rename(columns={"id": "#", "operation": "Operation", "category": "Category"})
 
@@ -71,13 +71,13 @@ def headline(df):
         print("No comparable results.")
         return
     faster_distributed = d[d["ratio"] < 1]
-    print("   Single process : DuckDB, in this notebook's process")
-    print("   Distributed    : Spark, local mode on this same machine")
+    print("   Single process : DuckDB, running inside this notebook")
+    print("   Split up       : Spark, cutting the same job into tasks on this one machine")
     print()
     print(f"   Operations run both ways : {len(d)}")
     print(f"   Identical SQL both ways  : {int(df['identical_sql'].sum())} of {len(df)}")
-    print(f"   Slower when distributed  : {d['ratio'].min():g}x to {d['ratio'].max():g}x")
-    print(f"   Faster when distributed  : {len(faster_distributed)} "
+    print(f"   Slower when split up     : {d['ratio'].min():g}x to {d['ratio'].max():g}x")
+    print(f"   Faster when split up     : {len(faster_distributed)} "
           f"({', '.join(faster_distributed['operation'].head(4)) if len(faster_distributed) else 'none at this size'})")
     bad = df[df["same_answer"] == False]
     if len(bad):
