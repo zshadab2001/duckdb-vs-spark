@@ -56,13 +56,13 @@ TIMED_RUNS = _env_int("BENCH_RUNS", 1)
 
 SPARK_CONF = {
     "spark.driver.memory": f"{ENGINE_MEMORY_MB}m",
-    # Spark defaults this to 200. On one machine that schedules 200 tasks across a
-    # handful of cores, and is the difference between a fair local run and a rigged one.
+    # Default is 200. On a single machine that schedules 200 tasks across a handful
+    # of cores, which dominates the runtime of anything that shuffles.
     "spark.sql.shuffle.partitions": str(ENGINE_THREADS),
     # Off by default. Without it the timings include a slow row-by-row handover to Python.
     "spark.sql.execution.arrow.pyspark.enabled": "true",
-    # DuckDB broadcasts small tables automatically, so Spark needs the threshold raised
-    # to be compared on equal terms.
+    # Raised so the small lookup tables get broadcast rather than shuffled. DuckDB
+    # makes that choice automatically, so the default 10MB would understate Spark.
     "spark.sql.autoBroadcastJoinThreshold": str(128 * 1024 * 1024),
     "spark.serializer": "org.apache.spark.serializer.KryoSerializer",
     "spark.sql.adaptive.enabled": "true",

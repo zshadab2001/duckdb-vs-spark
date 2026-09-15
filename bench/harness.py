@@ -21,7 +21,6 @@ class Case:
     spark_sql: Optional[str] = None
     duck_fn: Optional[Callable] = None     # arbitrary python (writes, etc.)
     spark_fn: Optional[Callable] = None
-    materialize: str = "df"                # "df" = collect result, "count" = count rows
     approximate: bool = False              # sketching algorithms, answers will not match
     metadata_only: bool = False            # answerable from the Parquet footer, no data read
     note: str = ""
@@ -45,9 +44,6 @@ class Bench:
         sql = case.sql or case.duck_sql
         if sql is None:
             return None
-        if case.materialize == "count":
-            return lambda: self.duck.execute(
-                f"SELECT count(*) AS n FROM ({sql}) _t").df()
         return lambda: self.duck.execute(sql).df()
 
     def _spark_callable(self, case):
@@ -58,12 +54,13 @@ class Bench:
         sql = case.sql or case.spark_sql
         if sql is None:
             return None
-        if case.materialize == "count":
-            return lambda: pd.DataFrame({"n": [self.spark.sql(sql).count()]})
         return lambda: self.spark.sql(sql).toPandas()
 
     @staticmethod
     def _time(fn):
+        # The warm-up also pulls the file into the OS page cache, so every timing
+        # below is a warm-cache number for both engines. Cold-start reads from disk
+        # would be slower for both and are not what this measures.
         for _ in range(C.WARMUP_RUNS):
             fn()
         times, out = [], None
@@ -73,8 +70,24 @@ class Bench:
             times.append(time.perf_counter() - t0)
         return statistics.median(times), out
 
-    @staticmethod
-    def _same_answer(d, s):
+    # Relative tolerance for float comparison. The two engines sum in different
+    # orders (different parallel partitioning), so identical logic still produces
+    # slightly different last bits. Over tens of millions of rows that drift is
+    # real. 1e-7 is loose enough to absorb it and still many orders of magnitude
+    # tighter than any genuine logic error would be.
+    FLOAT_RTOL = 1e-7
+    FLOAT_ATOL = 1e-6
+
+    @classmethod
+    def _same_answer(cls, d, s):
+        """Checksum, not proof.
+
+        Compares row count and the column sums of every numeric column. Sums are
+        order independent, so a different row order still passes, which is what we
+        want. Two caveats worth knowing before quoting this:
+          - a result with no numeric columns is only checked on row count
+          - two genuinely different results could in principle share a checksum
+        """
         if not isinstance(d, pd.DataFrame) or not isinstance(s, pd.DataFrame):
             return None
         if len(d) != len(s):
@@ -85,7 +98,7 @@ class Bench:
             return False
         for k in dn.index:
             a, b = float(dn[k]), float(sn[k])
-            if abs(a - b) > max(1e-6, abs(a) * 1e-9):
+            if abs(a - b) > max(cls.FLOAT_ATOL, abs(a) * cls.FLOAT_RTOL):
                 return False
         return True
 
