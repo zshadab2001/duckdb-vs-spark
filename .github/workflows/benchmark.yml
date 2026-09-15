@@ -103,10 +103,10 @@ jobs:
           cd html
           {
             echo "<!doctype html><meta charset=utf-8>"
-            echo "<title>DuckDB vs Spark benchmark</title>"
+            echo "<title>Does this job need distributing?</title>"
             echo "<style>body{font-family:system-ui,sans-serif;max-width:52rem;margin:3rem auto;padding:0 1rem;line-height:1.6}"
             echo "a{color:#3A7CA5}td{padding:.3rem .8rem .3rem 0}</style>"
-            echo "<h1>Compare DuckDB and Spark</h1>"
+            echo "<h1>Does this job need distributing?</h1>"
             echo "<p>Commit <code>${GITHUB_SHA:0:7}</code> · run #${GITHUB_RUN_NUMBER} · $(date -u '+%Y-%m-%d %H:%M UTC')</p>"
             echo "<p>Machine: $(nproc) CPU cores, $(free -g | awk '/^Mem:/{print $2}') GB RAM.</p>"
             echo "<p><strong>Start with 10_summary.</strong></p><table>"
@@ -145,12 +145,12 @@ jobs:
               same = sum(1 for r in rows if r.get("identical_sql"))
               ok   = sum(1 for r in rows if r.get("same_answer") is True)
               bad  = [r for r in rows if r.get("same_answer") is False]
-              print(f"* Operations compared: **{len(done)}**")
-              print(f"* Range: **{min(ratios):g}x to {max(ratios):g}x**")
-              print(f"* Identical SQL in both engines: **{same} of {len(rows)}**")
+              print(f"* Operations run both ways: **{len(done)}**")
+              print(f"* Slower when distributed: **{min(ratios):g}x to {max(ratios):g}x**")
+              print(f"* Identical SQL both ways: **{same} of {len(rows)}**")
               print(f"* Answers confirmed identical: **{ok}**, differing: **{len(bad)}**")
               spark_won = [r for r in done if r["ratio"] < 1]
               if spark_won:
-                  print(f"* Spark was faster on: {', '.join(r['operation'] for r in spark_won)}")
+                  print(f"* Faster when distributed: {', '.join(r['operation'] for r in spark_won)}")
               print("\nDownload the **benchmark-html** artifact below for the full report.")
           PY
