@@ -1,5 +1,9 @@
 """Timing harness.
 
+Every case runs the same work twice: once in a single process, once through a
+distributed engine running locally. The ratio is what distributing that job costs.
+
+
 An untimed warm-up runs first so a cold JVM is never measured. Both engines must
 materialise a real result, and both results are compared. A failure on one engine
 is recorded rather than aborting the run.

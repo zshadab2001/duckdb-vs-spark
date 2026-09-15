@@ -1,5 +1,8 @@
 """Starts both engines with identical memory and thread budgets, and registers the
-same table names in each so most cases can send one SQL string to both."""
+same table names in each so most cases can send one SQL string to both.
+
+Spark runs in local mode, so it pays the full cost of distributing work without
+any of the benefit that more machines would bring."""
 import os, time, warnings, duckdb
 from . import config as C
 

@@ -1,4 +1,4 @@
-"""Settings for the benchmark. Anything that affects a timing lives here."""
+"""Settings. Anything that affects a timing lives here."""
 import os
 import shutil
 
